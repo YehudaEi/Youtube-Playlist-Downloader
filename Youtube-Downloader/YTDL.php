@@ -395,6 +395,9 @@ class YouTubeDownloader
         $result = array();
         $formats = preg_split('/\s*,\s*/', $selector);
 
+        $name = ($links['name'] ?? "video");
+        unset($links['name']);
+
         // has to be in this order
         foreach ($formats as $f) {
 
@@ -405,6 +408,8 @@ class YouTubeDownloader
                 }
             }
         }
+
+        $result['name'] = $name;
 
         return $result;
     }
@@ -515,6 +520,7 @@ class YouTubeDownloader
 
         // get JSON encoded parameters that appear on video pages
         $json = $this->getPlayerResponse($page_html);
+        $name = $json['videoDetails']['title'] ?? "video";
 
         // get player.js location that holds signature function
         $url = $this->getPlayerUrl($page_html);
@@ -526,6 +532,8 @@ class YouTubeDownloader
         if (!is_array($result)) {
             return array();
         }
+
+        $result['name'] = $name;
 
         // do we want all links or just select few?
         if ($selector) {
