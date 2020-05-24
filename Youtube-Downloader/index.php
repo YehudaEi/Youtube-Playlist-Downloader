@@ -18,6 +18,8 @@
  * 
 ************************************************/
 
+error_reporting(0);
+
 function setPath($scriptName = "YouTubeDownloader.video", $parm = ""){
     $scriptName = mb_ereg_replace("([^\w\s\d\-_~,;\[\]\(\).])", '_', $scriptName);
     $scriptPath = '/YouTube/'.$scriptName;

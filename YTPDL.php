@@ -1,6 +1,6 @@
 <?php
 
-function downloadVideo($id, $vidName, $dirName){
+function downloadVideo($id, $dirName){
     if(!is_dir($dirName) && !file_exists($dirName))
         mkdir($dirName);
         
@@ -16,12 +16,19 @@ function downloadVideo($id, $vidName, $dirName){
         
         $url = $links[0]['url'];
         
-        return copy($url, $dirName.'/'.$vidName.'.mp4');
+        return copy($url, $dirName.'/'.$links['name'].'.mp4');
     }
 }
 
 function downloadListVideos($link, $playlistName, $mail){
-    $html = file_get_html($link);
+    $opts = [
+        "http" => [
+            "method" => "GET",
+            "header" => "Accept-language: en\r\n"
+        ]
+    ];
+    $context = stream_context_create($opts);
+    $html = file_get_html($link, null, $context);
 
     foreach ($html->find('tbody') as $tableElement){
         if($tableElement->id == "pl-load-more-destination"){
@@ -31,15 +38,15 @@ function downloadListVideos($link, $playlistName, $mail){
                         $videoLink = $element->href;
                 }
                 $vidName = trim($videoElement->getAttribute('data-title'));
-                if(isset($videoLink) && isset($vidName) && $vidName != "[Private video]"){
+                if(isset($videoLink) && $vidName != "[Private video]"){
                     if (preg_match('/[a-z0-9_-]{11,13}/i', $videoLink, $matches)) {
                         $id = $matches[0];
                     }
                     if(isset($id))
-                        $sec = downloadVideo($id, $vidName, $playlistName);
+                        $sec = downloadVideo($id, $playlistName);
                     if(!isset($sec) || !$sec){
                         var_dump($element->innertext);
-                        file_put_contents('err.log', $element->innertext."\n\n", FILE_APPEND);
+                        file_put_contents($playlistName . '/err.log', $element->innertext."\n\n", FILE_APPEND);
                     }
                 }
             }
