@@ -33,14 +33,19 @@ echo <<<HTML
 <html>
 
 <head>
-	<title>PHP Youtube</title>
+	<meta charset="utf-8">
+	<meta name="author" content="Yehuda Eisenberg">
+	<title>PHP Youtube Playlist Downloader</title>
 </head>
 
 <body align="center">
 	<div id="content">
 	    <form method="post">
     		<h1>PHP Youtube Playlist Downloader</h1>
-    		<input type="text" style="width:180" placeholder="Playlist ID (only id)" name="PID">
+    		<h2><a href="https://github.com/YehudaEi/Youtube-Playlist-Downloader">Fork in GitHub</a></h2>
+    		<h2>based on <a href="https://github.com/YehudaEi/Youtube-Downloader">YehudaEi/Youtube-Downloader</a> Lib</h2>
+                <br>
+                <input type="text" style="width:180" placeholder="Playlist ID (only id)" name="PID">
     		<br>
     		<br>
     		<input type="text" style="width:180" placeholder="Playlist name" name="name">
