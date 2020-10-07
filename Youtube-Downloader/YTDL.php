@@ -11,12 +11,19 @@ class Browser
 
     protected $user_agent = 'Mozilla/5.0 (Windows NT 6.3; WOW64; rv:49.0) Gecko/20100101 Firefox/49.0';
 
+    protected $proxy;
+
     public function __construct()
     {
         $filename = 'youtube_downloader_cookies.txt';
 
         $this->storage_dir = sys_get_temp_dir();
         $this->cookie_file = join(DIRECTORY_SEPARATOR, [sys_get_temp_dir(), $filename]);
+    }
+
+    public function setProxy($proxy_server)
+    {
+        $this->proxy = $proxy_server;
     }
 
     public function getCookieFile()
@@ -34,6 +41,10 @@ class Browser
 
         curl_setopt($ch, CURLOPT_COOKIEJAR, $this->cookie_file);
         curl_setopt($ch, CURLOPT_COOKIEFILE, $this->cookie_file);
+
+        if ($this->proxy) {
+            curl_setopt($ch, CURLOPT_PROXY, $this->proxy);
+        }
 
         //curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
 
@@ -293,7 +304,7 @@ class SignatureDecoder
 
             return $func_name;
 
-        } else if (preg_match('@\b([a-zA-Z0-9$]{2})\s*=\s*function\(\s*a\s*\)\s*{\s*a\s*=\s*a\.split\(\s*""\s*\)@is', $js_code, $matches)) {
+        } else if (preg_match('@(?:\b|[^a-zA-Z0-9$])([a-zA-Z0-9$]{2})\s*=\s*function\(\s*a\s*\)\s*{\s*a\s*=\s*a\.split\(\s*""\s*\)@is', $js_code, $matches)) {
             return preg_quote($matches[1]);
         }
 
@@ -301,27 +312,27 @@ class SignatureDecoder
     }
 
     // convert JS code for signature decipher to PHP code
-    public function parseFunctionCode($func_name, $player_htmlz)
+    public function parseFunctionCode($func_name, $player_html)
     {
         // extract code block from that function
         // single quote in case function name contains $dollar sign
         // xm=function(a){a=a.split("");wm.zO(a,47);wm.vY(a,1);wm.z9(a,68);wm.zO(a,21);wm.z9(a,34);wm.zO(a,16);wm.z9(a,41);return a.join("")};
-        if (preg_match('/' . $func_name . '=function\([a-z]+\){(.*?)}/', $player_htmlz, $matches)) {
+        if (preg_match('/' . $func_name . '=function\([a-z]+\){(.*?)}/', $player_html, $matches)) {
 
             $js_code = $matches[1];
 
             // extract all relevant statements within that block
             // wm.vY(a,1);
-            if (preg_match_all('/([a-z0-9]{2})\.([a-z0-9]{2})\([^,]+,(\d+)\)/i', $js_code, $matches) != false) {
+            if (preg_match_all('/([a-z0-9$]{2})\.([a-z0-9]{2})\([^,]+,(\d+)\)/i', $js_code, $matches) != false) {
 
-                // must be identical
+                // wm
                 $obj_list = $matches[1];
 
-                //
+                // vY
                 $func_list = $matches[2];
 
                 // extract javascript code for each one of those statement functions
-                preg_match_all('/(' . implode('|', $func_list) . '):function(.*?)\}/m', $player_htmlz, $matches2, PREG_SET_ORDER);
+                preg_match_all('/(' . implode('|', $func_list) . '):function(.*?)\}/m', $player_html, $matches2, PREG_SET_ORDER);
 
                 $functions = array();
 
@@ -352,11 +363,34 @@ class SignatureDecoder
     }
 }
 
+class Utils
+{
+    public static function extractVideoId($str)
+    {
+        // TODO
+    }
+
+    public static function arrayGet($array, $key, $default = null)
+    {
+        foreach (explode('.', $key) as $segment) {
+
+            if (is_array($array) && array_key_exists($segment, $array)) {
+                $array = $array[$segment];
+            } else {
+                $array = $default;
+                break;
+            }
+        }
+
+        return $array;
+    }
+}
+
 class YouTubeDownloader
 {
     protected $client;
 
-    /** @var string */
+    /** @var string|null */
     protected $error;
 
     function __construct()
@@ -374,9 +408,14 @@ class YouTubeDownloader
         return $this->error;
     }
 
-    // accepts either raw HTML or url
-    // <script src="//s.ytimg.com/yts/jsbin/player-fr_FR-vflHVjlC5/base.js" name="player/base"></script>
-    public function getPlayerUrl($video_html)
+    /**
+     * Look for a player script URL. E.g:
+     * <script src="//s.ytimg.com/yts/jsbin/player-fr_FR-vflHVjlC5/base.js" name="player/base"></script>
+     *
+     * @param $video_html
+     * @return null|string
+     */
+    public function getPlayerScriptUrl($video_html)
     {
         $player_url = null;
 
@@ -437,13 +476,44 @@ class YouTubeDownloader
         }
 
         $result['name'] = $name;
-
+        
         return $result;
     }
 
-    public function getVideoInfo($url)
+    // https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=JnfyjwChuNU&format=json
+    public function getVideoInfo($video_id)
     {
-        // $this->client->get("https://www.youtube.com/get_video_info?el=embedded&eurl=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D" . urlencode($video_id) . "&video_id={$video_id}");
+        $response = $this->client->get("https://www.youtube.com/get_video_info?" . http_build_query([
+                'video_id' => $video_id,
+                'eurl' => 'https://youtube.googleapis.com/v/' . $video_id,
+                'el' => 'embedded' // or detailpage. default: embedded, will fail if video is not embeddable
+            ]));
+
+        if ($response) {
+            $arr = array();
+
+            parse_str($response, $arr);
+
+            if (array_key_exists('player_response', $arr)) {
+                $arr['player_response'] = json_decode($arr['player_response'], true);
+            }
+
+            return $arr;
+        }
+
+        return null;
+    }
+
+    public function getPlayerConfig($video_id)
+    {
+        $video_id = $this->extractVideoId($video_id);
+        $response = $this->client->get("https://www.youtube.com/watch?v={$video_id}");
+
+        if (preg_match('/ytplayer.config\s*=\s*([^\n]+});ytplayer/i', $response, $matches)) {
+            return json_decode($matches[1], true);
+        }
+
+        return [];
     }
 
     public function getPageHtml($url)
@@ -464,23 +534,16 @@ class YouTubeDownloader
         return null;
     }
 
-    // redirector.googlevideo.com
-    //$url = preg_replace('@(\/\/)[^\.]+(\.googlevideo\.com)@', '$1redirector$2', $url);
     public function parsePlayerResponse($player_response, $js_code)
     {
         $parser = new Parser();
 
         try {
-            $formats = $player_response['streamingData']['formats'];
-            $adaptiveFormats = $player_response['streamingData']['adaptiveFormats'];
 
-            if (!is_array($formats)) {
-                $formats = array();
-            }
+            $formats = Utils::arrayGet($player_response, 'streamingData.formats', []);
 
-            if (!is_array($adaptiveFormats)) {
-                $adaptiveFormats = array();
-            }
+            // video only or audio only streams
+            $adaptiveFormats = Utils::arrayGet($player_response, 'streamingData.adaptiveFormats', []);
 
             $formats_combined = array_merge($formats, $adaptiveFormats);
 
@@ -488,7 +551,9 @@ class YouTubeDownloader
             $return = array();
 
             foreach ($formats_combined as $item) {
-                $cipher = isset($item['cipher']) ? $item['cipher'] : '';
+
+                // sometimes as appear as "cipher" or "signatureCipher"
+                $cipher = Utils::arrayGet($item, 'cipher', Utils::arrayGet($item, 'signatureCipher', ''));
                 $itag = $item['itag'];
 
                 // some videos do not need to be decrypted!
@@ -512,7 +577,6 @@ class YouTubeDownloader
                 $decoded_signature = (new SignatureDecoder())->decode($signature, $js_code);
 
                 // redirector.googlevideo.com
-                //$url = preg_replace('@(\/\/)[^\.]+(\.googlevideo\.com)@', '$1redirector$2', $url);
                 $return[] = array(
                     'url' => $url . '&' . $sp . '=' . $decoded_signature,
                     'itag' => $itag,
@@ -538,7 +602,8 @@ class YouTubeDownloader
         $page_html = $this->getPageHtml($video_id);
 
         if (strpos($page_html, 'We have been receiving a large volume of requests') !== false ||
-            strpos($page_html, 'systems have detected unusual traffic') !== false) {
+            strpos($page_html, 'systems have detected unusual traffic') !== false ||
+            strpos($page_html, '/recaptcha/') !== false) {
 
             $this->error = 'HTTP 429: Too many requests.';
 
@@ -550,7 +615,7 @@ class YouTubeDownloader
         $name = $json['videoDetails']['title'] ?? "video";
 
         // get player.js location that holds signature function
-        $url = $this->getPlayerUrl($page_html);
+        $url = $this->getPlayerScriptUrl($page_html);
         $js = $this->getPlayerCode($url);
 
         $result = $this->parsePlayerResponse($json, $js);
@@ -596,7 +661,8 @@ class YoutubeStreamer
         if (preg_match('/HTTP\/[\d.]+\s*(\d+)/', $data, $matches)) {
             $status_code = $matches[1];
 
-            if ($status_code == 200 || $status_code == 206) {
+            // if Forbidden or Not Found -> those are "valid" statuses too
+            if ($status_code == 200 || $status_code == 206 || $status_code == 403 || $status_code == 404) {
                 $this->headers_sent = true;
                 $this->sendHeader(rtrim($data));
             }
