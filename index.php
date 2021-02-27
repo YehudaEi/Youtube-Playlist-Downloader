@@ -19,13 +19,11 @@ if(isset($_POST['submit'])){
     }
     
     if (preg_match('/[a-z0-9_-]{11,40}/i', $_POST['PID'], $matches)) {
-        $link = "https://www.youtube.com/playlist?list=" . $matches[0];
+        downloadListVideos($matches[0], $pName, $email);
     }
     else{
         die('Playlist ID not found!');
     }
-    
-    downloadListVideos($link, $pName, $email);
 }
 else{
 

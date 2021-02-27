@@ -6,9 +6,9 @@
  * 
  * Owner: Yehuda Eisenberg.
  * 
- * Mail: Yehuda.telegram@gmail.com
+ * Mail: ytdl@yehudae.net
  * 
- * Link: https://yehudae.ga
+ * Link: https://yehudae.net
  * 
  * Telegram: @YehudaEisenberg
  * 
@@ -18,7 +18,9 @@
  * 
 ************************************************/
 
-error_reporting(0);
+error_reporting(1);
+ini_set('display_errors', 1);
+
 
 function setPath($scriptName = "YouTubeDownloader.video", $parm = ""){
     $scriptName = mb_ereg_replace("([^\w\s\d\-_~,;\[\]\(\).])", '_', $scriptName);
@@ -48,20 +50,20 @@ if(!isset($_GET['url'])){
         
         require_once('YTDL.php');
         
-        $youtube = new \YouTube\YouTubeDownloader();
+        $youtube = new YouTubeDownloader();
         $links = $youtube->getDownloadLinks("https://www.youtube.com/watch?v=".$id, "mp4");
+        $link = $links->getFirstCombinedFormat();
 
-        if (count($links) == 1) {
+        if (!$link) {
             setPath();
             die("no links..");
         }
         else{
-            setPath($links['name'] . ".mp4", "?url=https://www.youtube.com/watch?v=".$id);
+            setPath($links->getInfo()->getTitle() . ".mp4", "?url=https://www.youtube.com/watch?v=".$id);
         }
-        $url = $links[0]['url'];
-        
-        $streamer = new \YouTube\YoutubeStreamer();
-        $streamer->stream($url);
+
+        $streamer = new YoutubeStreamer();
+        $streamer->stream($link->url);
     }
     else{
         setPath();

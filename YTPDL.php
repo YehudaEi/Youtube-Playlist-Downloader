@@ -1,5 +1,7 @@
 <?php
 
+define('YOUTUBE_API_KEY', '');
+
 function downloadVideo($id, $dirName){
     if(!is_dir($dirName) && !file_exists($dirName))
         mkdir($dirName);
@@ -7,49 +9,45 @@ function downloadVideo($id, $dirName){
     if(isset($id) && !empty($id)){
         sleep(10);
 
-        $youtube = new \YouTube\YouTubeDownloader();
+        $youtube = new YouTubeDownloader();
         $links = $youtube->getDownloadLinks("https://www.youtube.com/watch?v=".$id, "mp4");
-        
-        if (count($links) == 0) {
+        $link = $links->getFirstCombinedFormat();
+
+        if (!$link) {
             die("no links..");
         }
         
-        $url = $links[0]['url'];
-        
-        return copy($url, $dirName.'/'.$links['name'].'.mp4');
+        return copy($link->url, $dirName.'/'.$links->getInfo()->getTitle().'.mp4');
     }
 }
 
-function downloadListVideos($link, $playlistName, $mail){
-    $opts = [
-        "http" => [
-            "method" => "GET",
-            "header" => "Accept-language: en\r\n"
-        ]
-    ];
-    $context = stream_context_create($opts);
-    $html = file_get_html($link, null, $context);
+function getPlaylistVideos($playlistId){
+    if(empty(YOUTUBE_API_KEY)){
+        die('ERROR: YOUTUBE_API_KEY is empty!');
+    }
 
-    foreach ($html->find('tbody') as $tableElement){
-        if($tableElement->id == "pl-load-more-destination"){
-            foreach($tableElement->find('tr') as $videoElement){
-                foreach($videoElement->find('a') as $element){
-                    if($element->class == "pl-video-title-link yt-uix-tile-link yt-uix-sessionlink  spf-link")
-                        $videoLink = $element->href;
-                }
-                $vidName = trim($videoElement->getAttribute('data-title'));
-                if(isset($videoLink) && $vidName != "[Private video]"){
-                    if (preg_match('/[a-z0-9_-]{11,13}/i', $videoLink, $matches)) {
-                        $id = $matches[0];
-                    }
-                    if(isset($id))
-                        $sec = downloadVideo($id, $playlistName);
-                    if(!isset($sec) || !$sec){
-                        var_dump($element->innertext);
-                        file_put_contents($playlistName . '/err.log', $element->innertext."\n\n", FILE_APPEND);
-                    }
-                }
-            }
+    $videos = json_decode(file_get_contents('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=' . $playlistId . '&key=' . YOUTUBE_API_KEY), true);
+
+    $result = array();
+    if (!empty($videos['items'])){
+        foreach ($videos['items'] as $video){
+            $result[] = array('title' => $video['snippet']['title'], 'id' => $video['snippet']['resourceId']['videoId']);
+        }
+
+        return $result;
+    }
+
+    return array();
+}
+
+function downloadListVideos($id, $playlistName, $mail){
+    $videos = getPlaylistVideos($id);
+    
+    foreach ($videos as $video){
+        $success = downloadVideo($video['id'], $playlistName);
+        if(!isset($success) || !$success){
+            var_dump($video['title']);
+            file_put_contents($playlistName . '/err.log', $video['title']."\n\n", FILE_APPEND);
         }
     }
     
